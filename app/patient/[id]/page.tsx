@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
 import {
@@ -25,6 +26,7 @@ function sanitizeTextInput(value: string): string {
 
 export default function PatientDetailPage() {
   const { currentUser, loading: authLoading, getIdToken } = useAuth();
+  const { showToast } = useToast();
   const router = useRouter();
   const params = useParams();
   const patientId = params.id as string;
@@ -162,10 +164,10 @@ export default function PatientDetailPage() {
 
     // Check for oversized files
     for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        alert("File size must be under 50MB");
-        return;
-      }
+    if (file.size > MAX_FILE_SIZE) {
+      showToast("File size must be under 50MB", "error");
+      return;
+    }
     }
 
     setUploading(true);
@@ -220,7 +222,7 @@ export default function PatientDetailPage() {
       }
     } catch (error) {
       console.error("Error uploading file:", error);
-      alert("Failed to upload file");
+      showToast("Failed to upload file", "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) {
@@ -303,7 +305,7 @@ export default function PatientDetailPage() {
       }
     } catch (error) {
       console.error("Error deleting media:", error);
-      alert("Failed to delete media");
+      showToast("Failed to delete media", "error");
     }
   };
 

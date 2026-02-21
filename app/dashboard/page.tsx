@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 import { useRouter } from "next/navigation";
 import {
   collection,
@@ -29,6 +30,7 @@ function sanitizeTextInput(value: string): string {
 
 export default function DashboardPage() {
   const { currentUser, loading, signOut } = useAuth();
+  const { showToast } = useToast();
   const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTermInput, setSearchTermInput] = useState("");
@@ -98,7 +100,7 @@ export default function DashboardPage() {
       fetchPatients();
     } catch (error) {
       console.error("Error adding patient:", error);
-      alert("Failed to add patient. Please try again.");
+      showToast("Failed to add patient. Please try again.", "error");
     } finally {
       setSaving(false);
     }
