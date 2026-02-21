@@ -157,12 +157,15 @@ export default function PatientDetailPage() {
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedConsultation || !patient) return;
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedConsultation || !patient) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      alert("File size must be under 50MB");
-      return;
+    // Check for oversized files
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        alert("File size must be under 50MB");
+        return;
+      }
     }
 
     setUploading(true);
@@ -172,12 +175,15 @@ export default function PatientDetailPage() {
         setUploading(false);
         return;
       }
+      
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("id_token", idToken);
+      for (const file of files) {
+        formData.append("files", file);
+      }
 
       const res = await fetch("/api/upload", {
         method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
       });
 
@@ -189,16 +195,16 @@ export default function PatientDetailPage() {
 
       const data = await res.json();
 
-      const mediaItem: MediaItem = {
-        type: file.type.startsWith("video/") ? "video" : "image",
-        thumbnail_file_id: data.thumbnail_file_id,
-        full_res_file_id: data.full_res_file_id,
+      const newMediaItems: MediaItem[] = (data.files || []).map((fileData: { thumbnail_file_id: string; full_res_file_id: string; fileName: string }) => ({
+        type: fileData.fileName.startsWith("video/") || fileData.fileName.match(/\.(mp4|webm|mov)$/i) ? "video" : "image",
+        thumbnail_file_id: fileData.thumbnail_file_id,
+        full_res_file_id: fileData.full_res_file_id,
         uploadedAt: new Date().toISOString(),
-      };
+      }));
 
       const updatedConsultations = (patient.consultations || []).map((c) =>
         c.id === selectedConsultation.id
-          ? { ...c, media: [...(c.media || []), mediaItem] }
+          ? { ...c, media: [...(c.media || []), ...newMediaItems] }
           : c
       );
 
@@ -270,6 +276,35 @@ export default function PatientDetailPage() {
   const closeLightbox = () => {
     setSelectedMedia(null);
     setLightboxUrl(null);
+  };
+
+  const deleteMediaItem = async () => {
+    if (selectedMedia === null || !selectedConsultation || !patient) return;
+    
+    if (!confirm("Are you sure you want to delete this media?")) return;
+
+    try {
+      const updatedConsultations = (patient.consultations || []).map((c) =>
+        c.id === selectedConsultation.id
+          ? { ...c, media: c.media?.filter((_, idx) => idx !== selectedMedia) || [] }
+          : c
+      );
+
+      const docRef = doc(db, "patients", patientId);
+      await updateDoc(docRef, {
+        consultations: updatedConsultations,
+        updatedAt: serverTimestamp(),
+      });
+
+      await fetchPatient();
+      closeLightbox();
+      if (selectedConsultation) {
+        setSelectedConsultationId(selectedConsultation.id);
+      }
+    } catch (error) {
+      console.error("Error deleting media:", error);
+      alert("Failed to delete media");
+    }
   };
 
   const navigateMedia = (direction: "prev" | "next") => {
@@ -387,10 +422,10 @@ export default function PatientDetailPage() {
                   
                   <div 
                     className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      isExpanded ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
+                      isExpanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"
                     }`}
                   >
-                    <div className="px-6 pb-6 border-t border-gray-100">
+                    <div className={`px-6 pb-6 border-t border-gray-100 ${(consultation.media?.length || 0) > 4 ? "overflow-y-auto max-h-[60vh]" : ""}`}>
                       <div className="mt-4">
                         <textarea
                           value={consultation.notes || ""}
@@ -408,6 +443,7 @@ export default function PatientDetailPage() {
                           ref={fileInputRef}
                           type="file"
                           accept="image/*,video/*"
+                          multiple
                           onChange={handleFileSelect}
                           className="hidden"
                         />
@@ -419,7 +455,7 @@ export default function PatientDetailPage() {
                           disabled={uploading}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                         >
-                          {uploading ? "Uploading..." : "Upload Photo/Video"}
+                          {uploading ? "Uploading..." : "Upload Photos/Videos"}
                         </button>
                       </div>
 
@@ -568,8 +604,19 @@ export default function PatientDetailPage() {
             ) : null}
           </div>
 
-          <div className="absolute bottom-4 text-white text-sm">
-            {selectedMedia + 1} / {selectedConsultation.media.length}
+          <div className="absolute bottom-4 flex flex-col items-center gap-2">
+            <button 
+              onClick={(e) => { e.stopPropagation(); deleteMediaItem(); }} 
+              className="text-white hover:text-red-500"
+              title="Delete"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+            <div className="text-white text-sm">
+              {selectedMedia + 1} / {selectedConsultation.media.length}
+            </div>
           </div>
         </div>
       )}
