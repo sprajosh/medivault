@@ -1,8 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyIdToken } from "@/lib/firebase-admin";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
+    
+    // Get ID token from formData
+    const idToken = formData.get("id_token") as string | null;
+    
+    // Verify the token
+    if (!idToken) {
+      return NextResponse.json({ error: "Unauthorized: No token provided" }, { status: 401 });
+    }
+    
+    const decodedToken = await verifyIdToken(idToken);
+    if (!decodedToken) {
+      return NextResponse.json({ error: "Unauthorized: Invalid token" }, { status: 401 });
+    }
+
     const file = formData.get("file") as File | null;
 
     if (!file) {
@@ -60,7 +75,8 @@ export async function POST(request: NextRequest) {
       fullResFileId = telegramResult.result.video.file_id;
     } else {
       const photos = telegramResult.result.photo;
-      thumbnailFileId = photos[0].file_id;
+      // photos[0] = smallest, photos[1] = medium, photos[length-1] = largest
+      thumbnailFileId = photos[1]?.file_id || photos[0].file_id;  // Medium for thumbnail
       fullResFileId = photos[photos.length - 1].file_id;
     }
 

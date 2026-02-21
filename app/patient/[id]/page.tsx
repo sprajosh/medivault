@@ -93,18 +93,11 @@ export default function PatientDetailPage() {
 
   const fetchPatient = async () => {
     if (!currentUser || !patientId) return;
-    console.log("DEBUG fetchPatient: currentUser.uid:", currentUser.uid);
-    console.log("DEBUG fetchPatient: patientId:", patientId);
     try {
       const docRef = doc(db, "patients", patientId);
-      console.log("DEBUG fetchPatient: Calling getDoc...");
       const docSnap = await getDoc(docRef);
-      console.log("DEBUG fetchPatient: docSnap.exists():", docSnap.exists());
       if (docSnap.exists()) {
         const data = docSnap.data() as Patient;
-        console.log("DEBUG fetchPatient: data.doctorId:", data.doctorId);
-        console.log("DEBUG fetchPatient: currentUser.uid:", currentUser.uid);
-        console.log("DEBUG fetchPatient: isDeleted:", data.isDeleted);
         if (data.doctorId !== currentUser.uid || data.isDeleted) {
           router.push("/dashboard");
           return;
@@ -158,10 +151,6 @@ export default function PatientDetailPage() {
     const file = e.target.files?.[0];
     if (!file || !selectedConsultation || !patient) return;
 
-    console.log("DEBUG: currentUser.uid:", currentUser?.uid);
-    console.log("DEBUG: patient.doctorId:", patient.doctorId);
-    console.log("DEBUG: Match:", currentUser?.uid === patient.doctorId);
-
     if (file.size > MAX_FILE_SIZE) {
       alert("File size must be under 50MB");
       return;
@@ -184,7 +173,9 @@ export default function PatientDetailPage() {
       });
 
       if (!res.ok) {
-        throw new Error("Upload failed");
+        const errorData = await res.json();
+        console.error("Upload failed:", errorData);
+        throw new Error(errorData.error || "Upload failed");
       }
 
       const data = await res.json();

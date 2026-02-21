@@ -1,12 +1,13 @@
-import { initializeApp, cert, ServiceAccount } from "firebase-admin/app";
+import { initializeApp, getApps, cert, ServiceAccount } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-let adminApp: ReturnType<typeof initializeApp> | null = null;
-
 function initializeAdmin() {
-  if (adminApp) {
-    return adminApp;
+  const existingApps = getApps();
+  
+  const defaultApp = existingApps.find(app => !app.name || app.name === "[DEFAULT]");
+  if (defaultApp) {
+    return defaultApp;
   }
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -15,7 +16,7 @@ function initializeAdmin() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 
   if (!projectId || !privateKey || !clientEmail) {
-    console.error("DEBUG: Missing env vars for firebase-admin");
+    console.error("Missing env vars for firebase-admin");
     return null;
   }
 
@@ -25,35 +26,23 @@ function initializeAdmin() {
     clientEmail,
   };
 
-  console.log("DEBUG: Initializing firebase-admin with projectId:", projectId);
-  
-  adminApp = initializeApp({
+  return initializeApp({
     credential: cert(serviceAccount),
-    projectId: projectId,
   });
-  
-  console.log("DEBUG: firebase-admin initialized successfully");
-  
-  return adminApp;
 }
 
 export function getAdminDb() {
   const app = initializeAdmin();
   if (!app) {
-    console.error("DEBUG getAdminDb: app is null");
     return null;
   }
-  
-  const db = getFirestore(app);
-  console.log("DEBUG getAdminDb: firestore created");
-  return db;
+  return getFirestore(app);
 }
 
 export async function verifyIdToken(idToken: string) {
   try {
     const app = initializeAdmin();
     if (!app) {
-      console.error("Firebase Admin SDK initialization failed");
       return null;
     }
     

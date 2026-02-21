@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyIdToken } from "@/lib/firebase-admin";
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify the token
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized: No token provided" }, { status: 401 });
+    }
+    
+    const idToken = authHeader.split("Bearer ")[1];
+    const decodedToken = await verifyIdToken(idToken);
+    if (!decodedToken) {
+      return NextResponse.json({ error: "Unauthorized: Invalid token" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get("file_id");
 
