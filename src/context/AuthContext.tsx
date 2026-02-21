@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from "react";
-import { User, onAuthStateChanged } from "firebase/auth";
+import { User, onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
@@ -15,6 +15,7 @@ interface AuthContextType {
   currentUser: User | null;
   loading: boolean;
   getIdToken: () => Promise<string | null>;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,8 +55,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  const signOut = async (): Promise<void> => {
+    try {
+      await firebaseSignOut(auth);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, loading, getIdToken }}>
+    <AuthContext.Provider value={{ currentUser, loading, getIdToken, signOut }}>
       {loading ? (
         <LoadingSpinner fullScreen />
       ) : (

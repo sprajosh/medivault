@@ -28,7 +28,7 @@ function sanitizeTextInput(value: string): string {
 }
 
 export default function DashboardPage() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, signOut } = useAuth();
   const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTermInput, setSearchTermInput] = useState("");
@@ -157,7 +157,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-600">{currentUser.email}</span>
             <button
-              onClick={() => router.push("/login")}
+              onClick={() => signOut()}
               className="text-sm text-red-600 hover:text-red-700"
             >
               Sign Out
