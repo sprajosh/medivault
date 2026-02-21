@@ -18,6 +18,7 @@ import { db } from "@/lib/firebase";
 import { Patient } from "@/types/patient";
 import { formatDate } from "@/utils/dateUtils";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import Modal from "@/components/Modal";
 import { debounce } from "@/utils/debounce";
 
 const PAGE_SIZE = 12;
@@ -265,56 +266,55 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full text-gray-900">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">Add New Patient</h3>
-            <form onSubmit={handleAddPatient}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-900 mb-1">
-                  Patient Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newPatientName}
-                  onChange={(e) => handlePatientNameChange(e.target.value)}
-                  maxLength={MAX_PATIENT_NAME_LENGTH}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-900 mb-1">
-                  Date of Birth *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={newPatientDOB}
-                  onChange={(e) => setNewPatientDOB(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "Add Patient"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add New Patient"
+      >
+        <form onSubmit={handleAddPatient}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
+              Patient Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={newPatientName}
+              onChange={(e) => handlePatientNameChange(e.target.value)}
+              maxLength={MAX_PATIENT_NAME_LENGTH}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
+            />
           </div>
-        </div>
-      )}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
+              Date of Birth *
+            </label>
+            <input
+              type="date"
+              required
+              value={newPatientDOB}
+              onChange={(e) => setNewPatientDOB(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Add Patient"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

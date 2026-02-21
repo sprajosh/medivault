@@ -16,6 +16,7 @@ import { db } from "@/lib/firebase";
 import { Patient, Consultation, MediaItem } from "@/types/patient";
 import { formatDate } from "@/utils/dateUtils";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import Modal from "@/components/Modal";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const MAX_CONSULTATION_NOTES_LENGTH = 4000;
@@ -44,30 +45,24 @@ export default function PatientDetailPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxLoading, setLightboxLoading] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const [notesSaving, setNotesSaving] = useState<Record<string, "saving" | "saved" | null>>({});
+  const [noteValues, setNoteValues] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadingThumbnails = useRef<Set<string>>(new Set());
+  const saveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   const getThumbnailKey = (consultationId: string, index: number) => `${consultationId}-${index}`;
 
-  const loadThumbnail = async (key: string, fileId: string) => {
-    if (loadingThumbnails.current.has(key)) return;
-    const idToken = await getIdToken();
-    if (!idToken) return;
-    loadingThumbnails.current.add(key);
-    try {
-      const res = await fetch(`/api/media?file_id=${fileId}`, {
-        headers: { Authorization: `Bearer ${idToken}` },
+  // Initialize local note values when consultation data changes
+  useEffect(() => {
+    if (patient?.consultations) {
+      const notes: Record<string, string> = {};
+      patient.consultations.forEach(c => {
+        notes[c.id] = c.notes || "";
       });
-      const data = await res.json();
-      if (data.url) {
-        setThumbnails((prev) => ({ ...prev, [key]: data.url }));
-      }
-    } catch (error) {
-      console.error("Error loading thumbnail:", error);
-    } finally {
-      loadingThumbnails.current.delete(key);
+      setNoteValues(notes);
     }
-  };
+  }, [patient?.id, patient?.consultations]);
 
   // Fetch patient on mount
   useEffect(() => {
@@ -88,16 +83,56 @@ export default function PatientDetailPage() {
   // Load thumbnails for current consultation's media
   useEffect(() => {
     if (selectedConsultation?.media && selectedConsultationId) {
-      selectedConsultation.media.forEach((item: MediaItem, index: number) => {
-        const key = getThumbnailKey(selectedConsultationId, index);
-        setThumbnails((prev) => {
-          if (prev[key] || loadingThumbnails.current.has(key)) {
-            return prev;
+      const loadBatchThumbnails = async () => {
+        const mediaItems = selectedConsultation.media;
+        
+        // Get IDs that need loading
+        const keysToLoad: string[] = [];
+        const idsToLoad: string[] = [];
+        
+        mediaItems.forEach((item: MediaItem, index: number) => {
+          const key = getThumbnailKey(selectedConsultationId, index);
+          if (!thumbnails[key] && !loadingThumbnails.current.has(key)) {
+            keysToLoad.push(key);
+            idsToLoad.push(item.thumbnail_file_id);
           }
-          loadThumbnail(key, item.thumbnail_file_id);
-          return prev;
         });
-      });
+        
+        if (idsToLoad.length === 0) return;
+        
+        // Mark all as loading
+        keysToLoad.forEach(key => loadingThumbnails.current.add(key));
+        
+        const idToken = await getIdToken();
+        if (!idToken) return;
+        
+        try {
+          const formData = new FormData();
+          idsToLoad.forEach(id => formData.append("file_ids", id));
+          
+          const res = await fetch("/api/media/batch", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${idToken}` },
+            body: formData,
+          });
+          
+          const data = await res.json();
+          
+          if (data.files) {
+            data.files.forEach((file: { fileId: string; url: string | null }, idx: number) => {
+              if (file.url) {
+                setThumbnails(prev => ({ ...prev, [keysToLoad[idx]]: file.url as string }));
+              }
+              loadingThumbnails.current.delete(keysToLoad[idx]);
+            });
+          }
+        } catch (error) {
+          console.error("Error loading thumbnails:", error);
+          keysToLoad.forEach(key => loadingThumbnails.current.delete(key));
+        }
+      };
+      
+      loadBatchThumbnails();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConsultation?.media, selectedConsultationId]);
@@ -231,25 +266,46 @@ export default function PatientDetailPage() {
     }
   };
 
-  const handleUpdateNotes = async (consultationId: string, newNotes: string) => {
+  const handleUpdateNotes = (consultationId: string, newNotes: string) => {
     if (!patient) return;
+    
+    // Update local state immediately - this is what the user sees while typing
+    setNoteValues(prev => ({ ...prev, [consultationId]: newNotes }));
+    
     const cleanNotes = sanitizeTextInput(newNotes).slice(0, MAX_CONSULTATION_NOTES_LENGTH);
 
-    try {
-      const updatedConsultations = (patient.consultations || []).map((c) =>
-        c.id === consultationId ? { ...c, notes: cleanNotes } : c
-      );
-
-      const docRef = doc(db, "patients", patientId);
-      await updateDoc(docRef, {
-        consultations: updatedConsultations,
-        updatedAt: serverTimestamp(),
-      });
-
-      fetchPatient();
-    } catch (error) {
-      console.error("Error updating notes:", error);
+    // Clear existing timeout
+    if (saveTimeoutRef.current[consultationId]) {
+      clearTimeout(saveTimeoutRef.current[consultationId]);
     }
+
+    // Show saving indicator
+    setNotesSaving((prev) => ({ ...prev, [consultationId]: "saving" }));
+
+    // Debounce the save to Firestore
+    saveTimeoutRef.current[consultationId] = setTimeout(async () => {
+      try {
+        const updatedConsultations = (patient.consultations || []).map((c) =>
+          c.id === consultationId ? { ...c, notes: cleanNotes } : c
+        );
+
+        const docRef = doc(db, "patients", patientId);
+        await updateDoc(docRef, {
+          consultations: updatedConsultations,
+          updatedAt: serverTimestamp(),
+        });
+
+        setNotesSaving((prev) => ({ ...prev, [consultationId]: "saved" }));
+        setTimeout(() => {
+          setNotesSaving((prev) => ({ ...prev, [consultationId]: null }));
+        }, 2000);
+
+        fetchPatient();
+      } catch (error) {
+        console.error("Error updating notes:", error);
+        setNotesSaving((prev) => ({ ...prev, [consultationId]: null }));
+      }
+    }, 1000);
   };
 
   const openLightbox = async (index: number) => {
@@ -428,9 +484,9 @@ export default function PatientDetailPage() {
                     }`}
                   >
                     <div className={`px-6 pb-6 border-t border-gray-100 ${(consultation.media?.length || 0) > 4 ? "overflow-y-auto max-h-[60vh]" : ""}`}>
-                      <div className="mt-4">
+                      <div className="mt-4 relative">
                         <textarea
-                          value={consultation.notes || ""}
+                          value={noteValues[consultation.id] ?? consultation.notes ?? ""}
                           onChange={(e) => handleUpdateNotes(consultation.id, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                           rows={4}
@@ -438,6 +494,23 @@ export default function PatientDetailPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
                           placeholder="Add notes..."
                         />
+                        {notesSaving[consultation.id] && (
+                          <div className="absolute bottom-2 right-2 text-xs text-gray-500 flex items-center gap-1">
+                            {notesSaving[consultation.id] === "saving" ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-gray-400 border-t-blue-500 rounded-full animate-spin"></div>
+                                Saving...
+                              </>
+                            ) : (
+                              <span className="text-green-600 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                Saved
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4">
@@ -507,52 +580,51 @@ export default function PatientDetailPage() {
         )}
       </main>
 
-      {showNewConsultationModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full text-gray-900">
-            <h3 className="text-lg font-semibold mb-4">New Consultation</h3>
-            <form onSubmit={handleCreateConsultation}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-900 mb-1">Date</label>
-                <input
-                  type="date"
-                  required
-                  value={newConsultationDate}
-                  onChange={(e) => setNewConsultationDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
-                <textarea
-                  value={newConsultationNotes}
-                onChange={(e) => setNewConsultationNotes(e.target.value)}
-                rows={4}
-                maxLength={MAX_CONSULTATION_NOTES_LENGTH}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Add initial notes..."
-              />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowNewConsultationModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingConsultation}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {savingConsultation ? "Saving..." : "Create"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showNewConsultationModal}
+        onClose={() => setShowNewConsultationModal(false)}
+        title="New Consultation"
+      >
+        <form onSubmit={handleCreateConsultation}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-900 mb-1">Date</label>
+            <input
+              type="date"
+              required
+              value={newConsultationDate}
+              onChange={(e) => setNewConsultationDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
           </div>
-        </div>
-      )}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
+            <textarea
+              value={newConsultationNotes}
+              onChange={(e) => setNewConsultationNotes(e.target.value)}
+              rows={4}
+              maxLength={MAX_CONSULTATION_NOTES_LENGTH}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Add initial notes..."
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowNewConsultationModal(false)}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingConsultation}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingConsultation ? "Saving..." : "Create"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {selectedMedia !== null && selectedConsultation && (
         <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50" onClick={closeLightbox}>

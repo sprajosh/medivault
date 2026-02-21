@@ -41,9 +41,11 @@ export async function GET(request: NextRequest) {
 
     if (!fileData.ok) {
       console.error("Telegram getFile error:", fileData);
+      // Telegram returns "FILE_ID_INVALID" for invalid file IDs
+      const isNotFound = fileData.description?.includes("FILE_ID_INVALID");
       return NextResponse.json(
-        { error: "Failed to get file from Telegram" },
-        { status: 500 },
+        { error: isNotFound ? "File not found" : "Failed to get file from Telegram" },
+        { status: isNotFound ? 404 : 500 },
       );
     }
 
