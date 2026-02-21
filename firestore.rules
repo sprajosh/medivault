@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /patients/{patientId} {
+      allow read: if request.auth != null
+                  && resource.data.doctorId == request.auth.uid
+                  && resource.data.isDeleted != true;
+      allow create: if request.auth != null
+                    && request.resource.data.doctorId == request.auth.uid;
+      allow update, delete: if request.auth != null
+                            && resource.data.doctorId == request.auth.uid;
+    }
+  }
+}
