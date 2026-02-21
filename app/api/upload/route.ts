@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/firebase-admin";
 
+export const dynamic = 'force-dynamic';
+
 const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_FILES = 10;
