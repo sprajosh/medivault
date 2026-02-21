@@ -43,13 +43,15 @@ export default function PatientDetailPage() {
   const [lightboxLoading, setLightboxLoading] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadingThumbnails = useRef<Set<string>>(new Set());
 
   const getThumbnailKey = (consultationId: string, index: number) => `${consultationId}-${index}`;
 
   const loadThumbnail = async (key: string, fileId: string) => {
-    if (thumbnails[key]) return;
+    if (loadingThumbnails.current.has(key)) return;
     const idToken = await getIdToken();
     if (!idToken) return;
+    loadingThumbnails.current.add(key);
     try {
       const res = await fetch(`/api/media?file_id=${fileId}`, {
         headers: { Authorization: `Bearer ${idToken}` },
@@ -60,6 +62,8 @@ export default function PatientDetailPage() {
       }
     } catch (error) {
       console.error("Error loading thumbnail:", error);
+    } finally {
+      loadingThumbnails.current.delete(key);
     }
   };
 
@@ -75,6 +79,7 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (selectedConsultationId) {
       setThumbnails({});
+      loadingThumbnails.current.clear();
     }
   }, [selectedConsultationId]);
 
@@ -83,9 +88,13 @@ export default function PatientDetailPage() {
     if (selectedConsultation?.media && selectedConsultationId) {
       selectedConsultation.media.forEach((item: MediaItem, index: number) => {
         const key = getThumbnailKey(selectedConsultationId, index);
-        if (!thumbnails[key]) {
+        setThumbnails((prev) => {
+          if (prev[key] || loadingThumbnails.current.has(key)) {
+            return prev;
+          }
           loadThumbnail(key, item.thumbnail_file_id);
-        }
+          return prev;
+        });
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -339,119 +348,123 @@ export default function PatientDetailPage() {
         {sortedConsultations.length === 0 ? (
           <p className="text-center text-gray-500">No consultations yet.</p>
         ) : (
-          <div className="space-y-6">
-            {sortedConsultations.map((consultation) => (
-              <div
-                key={consultation.id}
-                className={`bg-white rounded-lg shadow p-6 cursor-pointer ${
-                  selectedConsultation?.id === consultation.id ? "ring-2 ring-blue-500" : ""
-                }`}
-                onClick={() => setSelectedConsultationId(consultation.id)}
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      {formatDate(consultation.date)}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      {consultation.media?.length || 0} photos/videos
+          <div className="space-y-4">
+            {sortedConsultations.map((consultation) => {
+              const isExpanded = selectedConsultation?.id === consultation.id;
+              return (
+                <div
+                  key={consultation.id}
+                  className={`bg-white rounded-lg shadow transition-all duration-300 ${
+                    isExpanded ? "ring-2 ring-blue-500" : ""
+                  }`}
+                >
+                  <div
+                    className="p-6 cursor-pointer"
+                    onClick={() => setSelectedConsultationId(isExpanded ? null : consultation.id)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {formatDate(consultation.date)}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {consultation.media?.length || 0} photos/videos
+                        </p>
+                      </div>
+                      <svg 
+                        className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap mt-2">
+                      {consultation.notes || "No notes"}
                     </p>
                   </div>
-                </div>
-                <p className="text-gray-700 whitespace-pre-wrap">
-                  {consultation.notes || "No notes"}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {selectedConsultation && (
-          <div className="mt-8 bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Consultation Details - {formatDate(selectedConsultation.date)}
-              </h3>
-              <button
-                onClick={() => setSelectedConsultationId(null)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea
-                value={selectedConsultation.notes || ""}
-                onChange={(e) => handleUpdateNotes(selectedConsultation.id, e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                rows={4}
-                maxLength={MAX_CONSULTATION_NOTES_LENGTH}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
-                placeholder="Add notes..."
-              />
-            </div>
-
-            <div className="mb-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-                disabled={uploading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {uploading ? "Uploading..." : "Upload Photo/Video"}
-              </button>
-            </div>
-
-            {selectedConsultation.media && selectedConsultation.media.length > 0 ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {selectedConsultation.media.map((item: MediaItem, index: number) => (
-                  <div
-                    key={index}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openLightbox(index);
-                    }}
-                    className="aspect-square bg-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 relative"
+                  
+                  <div 
+                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                      isExpanded ? "max-h-[1000px] opacity-100" : "max-h-0 opacity-0"
+                    }`}
                   >
-                    {thumbnails[getThumbnailKey(selectedConsultationId!, index)] ? (
-                      <Image
-                        src={thumbnails[getThumbnailKey(selectedConsultationId!, index)]}
-                        alt={`Media ${index + 1}`}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <LoadingSpinner size="md" />
+                    <div className="px-6 pb-6 border-t border-gray-100">
+                      <div className="mt-4">
+                        <textarea
+                          value={consultation.notes || ""}
+                          onChange={(e) => handleUpdateNotes(consultation.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          rows={4}
+                          maxLength={MAX_CONSULTATION_NOTES_LENGTH}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
+                          placeholder="Add notes..."
+                        />
                       </div>
-                    )}
-                    {item.type === "video" && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <svg className="w-12 h-12 text-white opacity-80" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M8 5v14l11-7z" />
-                        </svg>
+
+                      <div className="mt-4">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*,video/*"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                          }}
+                          disabled={uploading}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {uploading ? "Uploading..." : "Upload Photo/Video"}
+                        </button>
                       </div>
-                    )}
+
+                      {consultation.media && consultation.media.length > 0 ? (
+                        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {consultation.media.map((item: MediaItem, index: number) => (
+                            <div
+                              key={index}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openLightbox(index);
+                              }}
+                              className="aspect-square bg-gray-200 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 relative"
+                            >
+                              {thumbnails[getThumbnailKey(consultation.id, index)] ? (
+                                <Image
+                                  src={thumbnails[getThumbnailKey(consultation.id, index)]}
+                                  alt={`Media ${index + 1}`}
+                                  fill
+                                  className="object-cover"
+                                  unoptimized
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <LoadingSpinner size="md" />
+                                </div>
+                              )}
+                              {item.type === "video" && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <svg className="w-12 h-12 text-white opacity-80" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : isExpanded && (
+                        <p className="mt-4 text-gray-500">No photos or videos for this consultation.</p>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500">No photos or videos for this consultation.</p>
-            )}
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
