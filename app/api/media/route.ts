@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { CACHE_MAX_AGE } from "@/constants";
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.json({ url: fileUrl });
     response.headers.set(
       "Cache-Control",
-      "public, max-age=2700, s-maxage=2700",
+      `public, max-age=${CACHE_MAX_AGE}, s-maxage=${CACHE_MAX_AGE}`,
     );
 
     return response;

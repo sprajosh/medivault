@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/firebase-admin";
+import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE, MAX_FILES } from "@/constants";
 
 export const dynamic = 'force-dynamic';
-
-const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_FILES = 10;
 
 interface UploadResult {
   thumbnail_file_id: string;
@@ -126,12 +123,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upload all files
-    const results: UploadResult[] = [];
-    for (const file of files) {
-      const result = await uploadToTelegram(file, BOT_TOKEN, CHAT_ID);
-      results.push(result);
-    }
+    // Upload all files in parallel
+    const results = await Promise.all(
+      files.map(file => uploadToTelegram(file, BOT_TOKEN, CHAT_ID))
+    );
 
     return NextResponse.json({ files: results });
   } catch (error) {

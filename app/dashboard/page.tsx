@@ -17,17 +17,11 @@ import {
 import { db } from "@/lib/firebase";
 import { Patient } from "@/types/patient";
 import { formatDate } from "@/utils/dateUtils";
+import { sanitizeTextInput } from "@/utils/sanitize";
+import { PAGE_SIZE, MAX_PATIENT_NAME_LENGTH, SEARCH_DEBOUNCE_MS } from "@/constants";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Modal from "@/components/Modal";
 import { debounce } from "@/utils/debounce";
-
-const PAGE_SIZE = 12;
-const MAX_PATIENT_NAME_LENGTH = 120;
-const SEARCH_DEBOUNCE_MS = 250;
-
-function sanitizeTextInput(value: string): string {
-  return value.replace(/\s+/g, " ").trimStart();
-}
 
 export default function DashboardPage() {
   const { currentUser, loading, signOut } = useAuth();
@@ -40,6 +34,7 @@ export default function DashboardPage() {
   const [newPatientName, setNewPatientName] = useState("");
   const [newPatientDOB, setNewPatientDOB] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const debouncedSetSearchTerm = useMemo(
     () => debounce((value: string) => setSearchTerm(value), SEARCH_DEBOUNCE_MS),
@@ -109,6 +104,7 @@ export default function DashboardPage() {
 
   const handleDeletePatient = async (patientId: string) => {
     if (!confirm("Are you sure you want to delete this patient?")) return;
+    setDeletingId(patientId);
     try {
       const docRef = doc(db, "patients", patientId);
       await updateDoc(docRef, {
@@ -118,6 +114,8 @@ export default function DashboardPage() {
       fetchPatients();
     } catch (error) {
       console.error("Error deleting patient:", error);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -203,21 +201,29 @@ export default function DashboardPage() {
                 </h3>
                 <button
                   onClick={() => handleDeletePatient(patient.id)}
-                  className="text-red-500 hover:text-red-700"
+                  disabled={deletingId === patient.id}
+                  className="text-red-500 hover:text-red-700 disabled:opacity-50"
                 >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
+                  {deletingId === patient.id ? (
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  )}
                 </button>
               </div>
               <p className="text-sm text-gray-600 mb-2">

@@ -15,15 +15,10 @@ import {
 import { db } from "@/lib/firebase";
 import { Patient, Consultation, MediaItem } from "@/types/patient";
 import { formatDate } from "@/utils/dateUtils";
+import { sanitizeTextInput } from "@/utils/sanitize";
+import { MAX_FILE_SIZE, MAX_CONSULTATION_NOTES_LENGTH } from "@/constants";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Modal from "@/components/Modal";
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const MAX_CONSULTATION_NOTES_LENGTH = 4000;
-
-function sanitizeTextInput(value: string): string {
-  return value.replace(/\s+/g, " ").trimStart();
-}
 
 export default function PatientDetailPage() {
   const { currentUser, loading: authLoading, getIdToken } = useAuth();
